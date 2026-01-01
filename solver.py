@@ -174,7 +174,7 @@ class BAPTRSolver:
                 if f_t < fval - self.tau:
                     accepted = True
                     break
-            print(f"Not accepted with {rho}")
+            print(f"Not accepted due to failure in rho or tau test.")
             t *= self.beta
         # step-7: post acceptance
         if not accepted:
