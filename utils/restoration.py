@@ -53,7 +53,7 @@ class RestorationNLP:
         }
         if self.verbose:
             opts = {
-                "ipopt.print_level": 2,
+                "ipopt.print_level": 5,
                 "print_time": True
             }
         else:

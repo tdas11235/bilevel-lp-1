@@ -33,7 +33,7 @@ class BAPTRSolver:
             eps_on=1e-6,
             eps_off=1e-8,
             max_iter=100,
-            t_min=1e-6,
+            t_min=1e-8,
             term_tol=1e-8,
             slack_tol=1e-8,
             dir_tol=1e-10,
@@ -91,14 +91,14 @@ class BAPTRSolver:
         A = np.asarray(self.problem.eval_A(q))
         b = np.asarray(self.problem.eval_b(q)).flatten()
         # step-1: LP solve
-        status, fval, x, lam = self.lp_solve(A, b)
+        status, fval, x, lam = self.lp.solve(A, b)
         if fval is None: raise RuntimeError(f"LP solver failed to solve with {status}")
         self.last_x = x
         self.last_lambda = lam
         self.last_fval = fval
         # stpe-2: stationarity check
         g = self.problem.grad_L(q, x, lam)
-        g_eff = self._effective_gradient(g)
+        g_eff = self._effective_gradient(q, g)
         if self._is_stationary(g_eff):
             if self._already_terminated(q):
                 print("Global Termination reached.")
@@ -125,7 +125,7 @@ class BAPTRSolver:
             active[lam < self.eps_off] = False
         # step-5: breakpoint prediction for active set
         phi0 = A @ x - b
-        dphi = np.asarray(self.problem.dphi(q, x, d)).flatten()
+        dphi = np.asarray(self.problem._dphi_fun(q, x, d)).flatten()
         t_break = np.inf
         for i in range(self.problem.m):
             if active[i]: continue
@@ -142,7 +142,18 @@ class BAPTRSolver:
             # projection killed step
             if np.linalg.norm(dq_eff) == 0.0:
                 if self._is_stationary(g_eff):
-                    return StepStatus.TERMINATE
+                    if self._already_terminated(q):
+                        print("Global Termination reached.")
+                        return StepStatus.TERMINATE
+                    self.terminated_points.append(
+                        TerminatedPoint(
+                            q=q.copy(),
+                            x=x.copy(),
+                            lam=lam.copy(),
+                            fval=fval
+                        )
+                    )
+                    print("Stationary point reached.")
                 t *= self.beta
                 continue
             A_t = np.asarray(self.problem.eval_A(q_trial))
@@ -150,6 +161,7 @@ class BAPTRSolver:
             status_t, f_t, x_t, lam_t = self.lp.solve(A_t, b_t)
             # lp infeasible -> reject and shrink
             if f_t is None:
+                print("Infeasible LP detected.")
                 t *= self.beta
                 continue
             delta_m = -np.dot(g_eff, dq_eff)
@@ -162,6 +174,7 @@ class BAPTRSolver:
                 if f_t < fval - self.tau:
                     accepted = True
                     break
+            print(f"Not accepted with {rho}")
             t *= self.beta
         # step-7: post acceptance
         if not accepted:
@@ -182,7 +195,7 @@ class BAPTRSolver:
         return StepStatus.ACCEPTED
         
     def solve(self, q0):
-        self.q = self._project_box(np.asarray(q0, type=float))
+        self.q = self._project_box(np.asarray(q0, dtype=float))
         self.delta = self.delta0
         self.active_prev = None
         self.terminated_points: list[TerminatedPoint] = []

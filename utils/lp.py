@@ -3,8 +3,10 @@ import highspy as hp
 
 
 class ValueLP:
-    def __init__(self, c, verbose=True):
+    def __init__(self, c, lb_x=None, ub_x=None, verbose=True):
         self.c = np.asarray(c)
+        self.lb_x = lb_x
+        self.ub_x = ub_x
         self.verbose = verbose
 
     def solve(self, A, b):
@@ -14,11 +16,14 @@ class ValueLP:
         s.t. A x <= b, x >= 0
         """
         m, n = A.shape
+        print(A)
         highs = hp.Highs()
         if not self.verbose: highs.silent()
         # variables
-        lb_x = np.zeros(n)
-        ub_x = np.full(n, np.inf)
+        if self.lb_x is None: lb_x = np.zeros(n)
+        else: lb_x = self.lb_x
+        if self.ub_x is None: ub_x = np.full(n, np.inf)
+        else: ub_x = self.ub_x
         highs.addVars(n, lb_x, ub_x)
         # objective
         idx = np.arange(n, dtype=np.int32)
@@ -36,6 +41,6 @@ class ValueLP:
             return status, None, None, None
         # primal, dual variables
         x = np.array(highs.getSolution().col_value)
-        lam = np.array(highs.getSolution().row_dual)
+        lam = -np.array(highs.getSolution().row_dual)
         fval = highs.getObjectiveValue()
         return status, fval, x, lam
