@@ -37,6 +37,9 @@ class BAPTRSolver:
             term_tol=1e-8,
             slack_tol=1e-8,
             dir_tol=1e-10,
+            damp=0.7,
+            amp=1.5,
+            switch_ratio=0.7,
             verbose=False
     ):
         """
@@ -61,9 +64,15 @@ class BAPTRSolver:
         self.term_tol = term_tol
         self.slack_tol = slack_tol
         self.dir_tol = dir_tol
+        self.damp = damp
+        self.amp = amp
+        self.switch_ratio = switch_ratio
         self.verbose = verbose
         # internal global states
         self.terminated_points: list[TerminatedPoint] = []
+        self.restore_count = 0
+        self.tol_mode = False
+        self.min_g = np.inf
 
     def _project_box(self, q):
         return np.clip(q, self.problem.q_min, self.problem.q_max)
@@ -73,8 +82,12 @@ class BAPTRSolver:
                          np.where(q >= self.problem.q_max - 1e-14, np.maximum(g, 0.0), g))
         return g_eff
     
-    def _is_stationary(self, g_eff):
-        return np.linalg.norm(g_eff) < self.eps
+    def _is_stationary(self, g_eff, q, fval):
+        check1 = np.linalg.norm(g_eff) < self.eps
+        if check1: return check1
+        check2 = self.tol_mode and np.linalg.norm(g_eff) / max(1.0, np.abs(fval), np.linalg.norm(q)) < self.eps
+        if check2: print("Reached stationary point within acceptable tolerance.")
+        return check1 or check2
     
     def _already_terminated(self, q):
         for tp in self.terminated_points:
@@ -99,7 +112,7 @@ class BAPTRSolver:
         # stpe-2: stationarity check
         g = self.problem.grad_L(q, x, lam)
         g_eff = self._effective_gradient(q, g)
-        if self._is_stationary(g_eff):
+        if self._is_stationary(g_eff, q, fval):
             if self._already_terminated(q):
                 print("Global Termination reached.")
                 return StepStatus.TERMINATE
@@ -115,6 +128,7 @@ class BAPTRSolver:
             return StepStatus.TERMINATE
         # step-3: descent direction
         norm_g = np.linalg.norm(g_eff)
+        self.min_g = min(self.min_g, norm_g)
         d = -g_eff / norm_g
         # step-4: dual hysteresis for active set
         if self.active_prev is None:
@@ -141,7 +155,7 @@ class BAPTRSolver:
             dq_eff = q_trial - q
             # projection killed step
             if np.linalg.norm(dq_eff) == 0.0:
-                if self._is_stationary(g_eff):
+                if self._is_stationary(g_eff, q, fval):
                     if self._already_terminated(q):
                         print("Global Termination reached.")
                         return StepStatus.TERMINATE
@@ -184,11 +198,11 @@ class BAPTRSolver:
         print(f"Step accepted with: {f_t}")
         if abs(delta_m) >= self.tau:
             if rho > 1.0 - self.kappa and np.array_equal(active, lam_t > self.eps_on):
-                self.delta *= 1.5
+                self.delta *= self.amp
             else:
-                self.delta *= 0.7
+                self.delta *= self.damp
         else:
-            self.delta *= 0.7
+            self.delta *= self.damp
         # accept step
         self.q = q_trial
         self.active_prev = active.copy()
@@ -206,6 +220,8 @@ class BAPTRSolver:
                 continue
             if status == StepStatus.RESTART:
                 print("Restart triggered.")
+                self.restore_count += 1
+                if (k >= self.switch_ratio * self.max_iter): self.tol_mode = True
                 q_rest, _, _, stat = self.restoration.solve(
                     y_k=self.q, q_init=self.q
                 )
@@ -217,4 +233,5 @@ class BAPTRSolver:
             if status == StepStatus.TERMINATE:
                 break
         solutions = [(tp.q, tp.x, tp.fval) for tp in self.terminated_points]
+        # print(self.min_g)
         return solutions

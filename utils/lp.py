@@ -16,7 +16,6 @@ class ValueLP:
         s.t. A x <= b, x >= 0
         """
         m, n = A.shape
-        print(A)
         highs = hp.Highs()
         if not self.verbose: highs.silent()
         # variables
