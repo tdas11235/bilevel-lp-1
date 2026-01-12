@@ -20,7 +20,6 @@ class LP2(BilevelLPProblem):
         self.c_vec = np.array([1.0, 1.0])
 
     def A_sym(self, q):
-        # MX-friendly: -(q*x1 + x2) <= -10
         return ca.MX(ca.horzcat(-q[0], -1.0))
 
     def b_sym(self, q):
