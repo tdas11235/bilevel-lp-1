@@ -168,6 +168,7 @@ class BAPTRSolver:
                         )
                     )
                     print("Stationary point reached.")
+                    return StepStatus.TERMINATE
                 t *= self.beta
                 continue
             A_t = np.asarray(self.problem.eval_A(q_trial))
@@ -205,7 +206,7 @@ class BAPTRSolver:
             self.delta *= self.damp
         # accept step
         self.q = q_trial
-        self.active_prev = active.copy()
+        self.active_prev = lam_t > self.eps_on
         return StepStatus.ACCEPTED
         
     def solve(self, q0):
